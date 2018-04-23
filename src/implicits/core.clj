@@ -1,5 +1,6 @@
 (ns implicits.core
-  (:refer-clojure :exclude [defn]))
+  (:refer-clojure :exclude [defn])
+  (:require [implicits.core :as implicits]))
 
 (defmacro defimplicit
   "Like def, but defines an implicit value."
@@ -7,21 +8,22 @@
   `(def ~(with-meta sym {:dynamic true, :implicit true})
      ~@rest))
 
+(defmacro implicitly
+  [& bindings]
+  `(list ::implicitly ~(into {} (map (fn [[sym value]] [(resolve sym) value]) (partition 2 bindings)))))
+
 (defn- with-implicits
   [implicits f]
-  (fn [& args]    
-    (with-bindings* (if (and (coll? (first args))
-                             (= 'implicitly (first (first args))))
-                      (merge implicits (into {} (map (fn [[sym val]]
-                                                       [(resolve sym) val])
-                                                     (partition 2 (rest (first args))))))
-                      implicits)
-      (fn [args]
-        (apply f args))
-      (if (and (coll? (first args))
-               (= 'implicitly (first (first args))))
-        (rest args)
-        args))))
+  (fn [& args]
+    (let [implicit-params? (and (coll? (first args))
+                                (= ::implicitly (first (first args))))
+          bindings         (if implicit-params?
+                             (merge implicits (second (first args)))
+                             implicits)
+          fargs            (if implicit-params?
+                             (rest args)
+                             args)]
+      (with-bindings* bindings #(apply f %) fargs))))
 
 (defmacro defn
   "Similar to clojure.core/defn but it uses two parameter lists where
@@ -53,15 +55,3 @@
        (with-implicits
          ~implicits#
          (fn ~@fdecl)))))
-
-(comment
-  (defimplicit x 3)
-  (macroexpand-1
-    '(defn hello [x] []
-       x))
-
-  (defn hello [x] []
-    x)
-
-  (hello '(implicitly x 5))
-  )
